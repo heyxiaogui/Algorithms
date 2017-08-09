@@ -25,6 +25,7 @@
 
 
 #define DEVICE_NAME "myCharDev"
+#define DEV_SIZE 10240
 
 module_param(device_major, int, S_IRUGO);
 
@@ -32,10 +33,26 @@ struct char_dev
 {
 	struct cdev cdev;
 	char *data;
+	char *p_read;
+	char *p_write;
+	unsigned int count;
+	unsigned int size;
 };
 
 struct char_dev *p_chardev;
 struct class *dev_class;
+
+static int chardev_open(struct inode *inode, struct file *filp)
+{
+	struct char_dev *p_dev;
+	p_dev = container_of(inode->i_cdev, struct char_dev, cdev);
+	filp->private_data = p_dev;
+/*tqj_2017.8.9:   Not defined some open mode yet*/	
+	return 0;
+
+}
+
+
 
 static const struct file_operations chardev_fops{
 	.owner   = THIS_MODULE;
@@ -44,6 +61,26 @@ static const struct file_operations chardev_fops{
 	.open    = chardev_open;
 	.release = chardev_release;
 };
+
+
+
+static int alloc_chardev(struct char_dev *chardev, int size)
+{	
+	chardev->data = kmalloc(size, GFP_KERNEL);
+	if (!chardev)
+	{
+		printk(KERN_EMERG "fail to alloc char device buffer\n" );
+		return -1;
+	}
+	chardev->size = size;
+	chardev->count = 0;
+	chardev->p_read = chardev->data;
+	chardev-p_write = chardev->data;
+
+	return 0;
+}
+
+
 
 static void chardev_setup_cdev(struct char_dev *p_cdev)
 {
@@ -58,10 +95,12 @@ static void chardev_setup_cdev(struct char_dev *p_cdev)
 	ret = cdev_add(&p_cdev->cdev, devno, 1);
 	if (ret)
 	{
-		printk(KERN_EMERG "ERROR: %d adding char_cdev: %d", ret, device_major);
+		printk(KERN_EMERG "ERROR: %d adding char_cdev: %d\n", ret, device_major);
 		lcdev_del(&p_cdev->cdev);
 	}
 }
+
+
 
 static int __init chardev_init(void)
 {
@@ -80,18 +119,25 @@ static int __init chardev_init(void)
 
 	if (ret < 0)
 	{
-		printk(KERN_EMERG "char_dev: failed to alloc device number by the major %d", device_major);
+		printk(KERN_EMERG "char_dev: failed to alloc device number by the major %d\n", device_major);
 		return ret;
 	}
 
 	p_chardev = kmalloc(sizeof(struct char_dev), GFP_KERNEL);
 	if (!p_chardev)
 	{
-		printk(KERN_EMERG "failed to alloc p_chardev");
+		printk(KERN_EMERG "failed to alloc p_chardev\n");
 		goto kmalloc_failed;
 	}
 
 	memset(p_chardev, 0, sizeof(struct char_dev));
+
+	ret = alloc_chardev(p_chardev, DEV_SIZE);
+	if (ret)
+	{
+		goto kmalloc_failed;
+	}
+
 
 	chardev_setup_cdev(p_chardev);
 
